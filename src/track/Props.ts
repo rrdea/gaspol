@@ -1,7 +1,7 @@
-// Builds the M2 props: kicker ramps (custom wedge meshes with GROUND-filtered Havok
-// mesh colliders, so the rider rides up and launches off them) and rocks (one
-// thin-instanced mesh, static Havok spheres with the OBSTACLE filter, and a plain
-// obstacle list for the rider's crash check).
+// Builds the track props from TrackData: kicker ramps (custom wedges with GROUND-filtered
+// Havok mesh colliders, so the rider rides up and launches off them), rocks and trees
+// (thin instances: one draw call per mesh, static Havok shapes in one OBSTACLE-filtered
+// body), plus the plain obstacle list the rider's crash check uses.
 
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
@@ -13,44 +13,64 @@ import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { PhysicsAggregate } from '@babylonjs/core/Physics/v2/physicsAggregate';
 import { PhysicsBody } from '@babylonjs/core/Physics/v2/physicsBody';
-import { PhysicsShapeContainer, PhysicsShapeSphere } from '@babylonjs/core/Physics/v2/physicsShape';
+import {
+  PhysicsShapeContainer,
+  PhysicsShapeCylinder,
+  PhysicsShapeSphere,
+} from '@babylonjs/core/Physics/v2/physicsShape';
 import { PhysicsMotionType, PhysicsShapeType } from '@babylonjs/core/Physics/v2/IPhysicsEnginePlugin';
 import type { Scene } from '@babylonjs/core/scene';
-import { config, type TerrainConfig } from '../config';
-import { heightAt, trailCenterX } from './terrainShape';
-import { ramps, rockLayout, type RampPlacement } from './m2Layout';
-import type { SphereObstacle } from './obstacles';
+import { config } from '../config';
+import type { TrackTerrain } from './TrackTerrain';
+import { rockLayout, treeLayout, type Placement, type RampDef, type TrackDef } from './TrackData';
+import type { Obstacle } from './obstacles';
 
 /** Number of segments in the curved kicker surface. */
 const RAMP_SEGMENTS = 8;
 /** Exponent of the kicker curve y = h * t^k (higher = steeper lip). */
 const RAMP_CURVE = 1.6;
+/** Placeholder tree proportions, per unit of tree radius. */
+const TRUNK_HEIGHT = 2.2;
+const TRUNK_RADIUS = 0.28;
+const CROWN_HEIGHT = 5.5;
+const CROWN_BASE = 1.5;
 
 export class Props {
-  readonly obstacles: SphereObstacle[] = [];
+  readonly obstacles: Obstacle[] = [];
   private readonly meshes: Mesh[] = [];
   private readonly aggregates: PhysicsAggregate[] = [];
   private readonly materials: StandardMaterial[] = [];
-  private rockBody: PhysicsBody | null = null;
-  private rockShape: PhysicsShapeContainer | null = null;
-  private rockNode: TransformNode | null = null;
+  private readonly bodies: PhysicsBody[] = [];
+  private readonly shapes: PhysicsShapeContainer[] = [];
+  private readonly nodes: TransformNode[] = [];
 
   constructor(
     scene: Scene,
-    private readonly cfg: TerrainConfig,
+    def: TrackDef,
+    private readonly terrain: TrackTerrain,
+    finishS: number,
   ) {
     const rampMat = this.material(scene, 'rampMat', new Color3(0.62, 0.45, 0.28));
-    for (const r of ramps) this.buildRamp(scene, r, rampMat);
-    this.buildRocks(scene);
+    for (const r of def.ramps) this.buildRamp(scene, r, rampMat);
+    this.buildRocks(scene, rockLayout(def, finishS));
+    this.buildTrees(scene, treeLayout(def, terrain.path.length));
   }
 
   dispose(): void {
     for (const a of this.aggregates) a.dispose();
-    this.rockBody?.dispose();
-    this.rockShape?.dispose();
-    this.rockNode?.dispose();
+    for (const b of this.bodies) b.dispose();
+    for (const s of this.shapes) s.dispose();
+    for (const n of this.nodes) n.dispose();
     for (const m of this.meshes) m.dispose();
     for (const m of this.materials) m.dispose();
+  }
+
+  /** World position of a track-space point on the ground. */
+  private place(s: number, offset: number): Vector3 {
+    const c = this.terrain.path.sampleAt(s);
+    const x = c.x + Math.cos(c.heading) * offset;
+    const z = c.z - Math.sin(c.heading) * offset;
+    return new Vector3(x, this.terrain.heightSL(s, offset), z);
   }
 
   private material(scene: Scene, name: string, color: Color3): StandardMaterial {
@@ -62,24 +82,27 @@ export class Props {
     return m;
   }
 
-  private buildRamp(scene: Scene, r: RampPlacement, mat: StandardMaterial): void {
+  private buildRamp(scene: Scene, r: RampDef, mat: StandardMaterial): void {
     const mesh = new Mesh('ramp', scene);
     rampVertexData(r, config.props.rampSkirt).applyToMesh(mesh, false);
     mesh.material = mat;
 
-    // Place on the trail, aligned with the trail direction and pitched to the local slope.
-    const { cfg } = this;
-    const cx = trailCenterX(r.z, cfg) + r.offset;
-    const ahead = r.z + r.length;
-    const dx = trailCenterX(ahead, cfg) + r.offset - cx;
-    const yaw = Math.atan2(dx, r.length);
-    const drop = heightAt(cx, r.z, cfg) - heightAt(cx + dx, ahead, cfg);
+    // Aligned with the track and pitched to the local grade.
+    const { terrain } = this;
+    const heading = terrain.path.sampleAt(r.s).heading;
+    const drop = terrain.heightSL(r.s, r.offset) - terrain.heightSL(r.s + r.length, r.offset);
     const pitch = Math.atan2(drop, r.length);
     // Sit on the lowest ground under the front edge so there is no gap.
     const half = r.width / 2;
-    const y = Math.min(heightAt(cx - half, r.z, cfg), heightAt(cx, r.z, cfg), heightAt(cx + half, r.z, cfg)) - 0.05;
-    mesh.position.set(cx, y, r.z);
-    mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(yaw, pitch, 0);
+    const foot = this.place(r.s, r.offset);
+    foot.y =
+      Math.min(
+        terrain.heightSL(r.s, r.offset - half),
+        terrain.heightSL(r.s, r.offset),
+        terrain.heightSL(r.s, r.offset + half),
+      ) - 0.05;
+    mesh.position.copyFrom(foot);
+    mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(heading, pitch, 0);
     mesh.computeWorldMatrix(true);
     mesh.freezeWorldMatrix();
     mesh.isPickable = false;
@@ -90,27 +113,36 @@ export class Props {
     this.meshes.push(mesh);
   }
 
-  private buildRocks(scene: Scene): void {
-    const { cfg } = this;
+  private staticContainer(scene: Scene, name: string): PhysicsShapeContainer {
+    const node = new TransformNode(name, scene);
+    const container = new PhysicsShapeContainer(scene);
+    container.filterMembershipMask = config.physics.filterObstacle;
+    const body = new PhysicsBody(node, PhysicsMotionType.STATIC, false, scene);
+    this.nodes.push(node);
+    this.shapes.push(container);
+    this.bodies.push(body);
+    return container;
+  }
+
+  private finishContainer(container: PhysicsShapeContainer): void {
+    this.bodies[this.shapes.indexOf(container)].shape = container;
+  }
+
+  private buildRocks(scene: Scene, placements: Placement[]): void {
     const rock = MeshBuilder.CreateIcoSphere('rock', { radius: 1, subdivisions: config.props.rockDetail, flat: true }, scene);
     rock.material = this.material(scene, 'rockMat', new Color3(0.5, 0.48, 0.45));
     rock.isPickable = false;
     this.meshes.push(rock);
 
-    this.rockNode = new TransformNode('rocks', scene);
-    const container = new PhysicsShapeContainer(scene);
-    const placements = rockLayout(cfg);
+    const container = this.staticContainer(scene, 'rocks');
     const matrices = new Float32Array(placements.length * 16);
     const m = new Matrix();
     const q = new Quaternion();
     const scale = new Vector3();
-    const pos = new Vector3();
-
     placements.forEach((p, i) => {
-      const x = trailCenterX(p.z, cfg) + p.offset;
+      const pos = this.place(p.s, p.offset);
       // Partly buried; squashed a little for variety.
-      const y = heightAt(x, p.z, cfg) + p.radius * 0.25;
-      pos.set(x, y, p.z);
+      pos.y += p.radius * 0.25;
       scale.set(p.radius * (1 + p.variant * 0.3), p.radius * (0.7 + p.variant * 0.2), p.radius);
       Quaternion.RotationYawPitchRollToRef(p.variant * Math.PI * 2, p.variant, 0, q);
       Matrix.ComposeToRef(scale, q, pos, m);
@@ -118,25 +150,73 @@ export class Props {
 
       // Collision sphere slightly smaller than the visual so grazes feel fair.
       const r = p.radius * 0.9;
-      this.obstacles.push({ x, y, z: p.z, radius: r });
+      this.obstacles.push({ kind: 'sphere', x: pos.x, y: pos.y, z: pos.z, radius: r });
       const sphere = new PhysicsShapeSphere(Vector3.Zero(), r, scene);
       sphere.filterMembershipMask = config.physics.filterObstacle;
-      container.addChild(sphere, pos.clone());
+      container.addChild(sphere, pos);
     });
-
     rock.thinInstanceSetBuffer('matrix', matrices, 16, true);
+    // Bounds must cover every instance, or the whole batch is culled with the base mesh.
+    rock.thinInstanceRefreshBoundingInfo();
     rock.freezeWorldMatrix();
+    this.finishContainer(container);
+  }
 
-    container.filterMembershipMask = config.physics.filterObstacle;
-    const body = new PhysicsBody(this.rockNode, PhysicsMotionType.STATIC, false, scene);
-    body.shape = container;
-    this.rockBody = body;
-    this.rockShape = container;
+  private buildTrees(scene: Scene, placements: Placement[]): void {
+    // Unit trunk and crown with their base at the origin, scaled per instance.
+    const trunk = MeshBuilder.CreateCylinder('trunk', { height: 1, diameter: 1, tessellation: 6 }, scene);
+    trunk.bakeTransformIntoVertices(Matrix.Translation(0, 0.5, 0));
+    const crown = MeshBuilder.CreateCylinder('crown', { height: 1, diameterTop: 0, diameterBottom: 1, tessellation: 7 }, scene);
+    crown.bakeTransformIntoVertices(Matrix.Translation(0, 0.5, 0));
+    trunk.material = this.material(scene, 'trunkMat', new Color3(0.38, 0.26, 0.16));
+    crown.material = this.material(scene, 'crownMat', new Color3(0.18, 0.42, 0.2));
+    for (const mesh of [trunk, crown]) {
+      mesh.isPickable = false;
+      this.meshes.push(mesh);
+    }
+
+    const container = this.staticContainer(scene, 'trees');
+    const trunkM = new Float32Array(placements.length * 16);
+    const crownM = new Float32Array(placements.length * 16);
+    const m = new Matrix();
+    const q = new Quaternion();
+    const scale = new Vector3();
+    const top = new Vector3();
+    placements.forEach((p, i) => {
+      const base = this.place(p.s, p.offset);
+      base.y -= 0.3; // sink into slopes
+      const size = p.radius;
+      const trunkH = TRUNK_HEIGHT * size;
+      const trunkR = TRUNK_RADIUS * size;
+      Quaternion.RotationYawPitchRollToRef(p.variant * Math.PI * 2, 0, 0, q);
+
+      scale.set(trunkR * 2, trunkH, trunkR * 2);
+      Matrix.ComposeToRef(scale, q, base, m);
+      m.copyToArray(trunkM, i * 16);
+
+      const crownR = CROWN_BASE * size * (0.85 + p.variant * 0.3);
+      scale.set(crownR * 2, CROWN_HEIGHT * size, crownR * 2);
+      top.set(base.x, base.y + trunkH * 0.6, base.z);
+      Matrix.ComposeToRef(scale, q, top, m);
+      m.copyToArray(crownM, i * 16);
+
+      this.obstacles.push({ kind: 'cylinder', x: base.x, z: base.z, y0: base.y, height: trunkH, radius: trunkR * 1.5 });
+      const cyl = new PhysicsShapeCylinder(Vector3.Zero(), new Vector3(0, trunkH, 0), trunkR, scene);
+      cyl.filterMembershipMask = config.physics.filterObstacle;
+      container.addChild(cyl, base);
+    });
+    trunk.thinInstanceSetBuffer('matrix', trunkM, 16, true);
+    crown.thinInstanceSetBuffer('matrix', crownM, 16, true);
+    for (const mesh of [trunk, crown]) {
+      mesh.thinInstanceRefreshBoundingInfo();
+      mesh.freezeWorldMatrix();
+    }
+    this.finishContainer(container);
   }
 }
 
 /** Kicker ramp geometry in local space: foot at the origin, rising along +Z, flat-shaded. */
-export function rampVertexData(r: RampPlacement, skirt: number): VertexData {
+export function rampVertexData(r: RampDef, skirt: number): VertexData {
   const w = r.width / 2;
   const bottom = -skirt;
   // Top profile: curved kicker then a flat deck.

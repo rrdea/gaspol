@@ -59,6 +59,13 @@ export class TrickSystem {
     if (ended !== null && ended > 0) this.events.emit('comboEnded', { total: ended });
   }
 
+  /** New race: zero the score and combo. */
+  reset(): void {
+    this.score = 0;
+    this.combo.end();
+    this.grabs.clear();
+  }
+
   /** Crashing loses the current combo. */
   onCrash(): void {
     this.combo.end();

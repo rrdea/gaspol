@@ -30,6 +30,8 @@ export class ChaseCamera {
   private readonly pivot = new Vector3();
   private readonly lookAt = new Vector3();
   private readonly hit = new PhysicsRaycastResult();
+  /** The camera only pulls in for terrain/ramps, not trees (avoids popping past trunks). */
+  private readonly query = { membership: config.physics.filterQuery, collideWith: config.physics.filterGround };
   private readonly physics: PhysicsEngine;
 
   constructor(
@@ -108,7 +110,7 @@ export class ChaseCamera {
     riderPos.addToRef(this.offset, cam);
 
     // Pull in if terrain or a prop is between rider and camera.
-    this.physics.raycastToRef(this.pivot, cam, this.hit);
+    this.physics.raycastToRef(this.pivot, cam, this.hit, this.query);
     if (this.hit.hasHit) {
       const dir = cam.subtract(this.pivot);
       const len = dir.length();

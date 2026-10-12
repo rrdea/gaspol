@@ -10,7 +10,8 @@ export type Action =
   | 'grab'
   | 'respawn'
   | 'pause'
-  | 'debug';
+  | 'debug'
+  | 'confirm';
 
 export type KeyBindings = Record<Action, readonly string[]>;
 
@@ -25,6 +26,7 @@ export const defaultBindings: KeyBindings = {
   respawn: ['KeyR'],
   pause: ['Escape'],
   debug: ['F3'],
+  confirm: ['Enter', 'NumpadEnter'],
 };
 
 export class Input {

@@ -42,4 +42,19 @@ export interface GameEvents {
   comboEnded: { total: number };
   crashed: { cause: 'landing' | 'obstacle' };
   respawned: { reason: 'manual' | 'outOfBounds' | 'crash' };
+  /** Countdown number shown (3, 2, 1). */
+  countdown: { n: number };
+  raceStarted: Record<string, never>;
+  checkpoint: { index: number; total: number; timeMs: number };
+  raceFinished: RaceResult;
+}
+
+export interface RaceResult {
+  trackName: string;
+  timeMs: number;
+  trickScore: number;
+  bestTimeMs: number;
+  bestTrickScore: number;
+  newBestTime: boolean;
+  newBestTricks: boolean;
 }

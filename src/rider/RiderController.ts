@@ -20,6 +20,14 @@ import {
   type Vec3,
 } from './riderPhysics';
 import type { GrabName } from './tricks';
+import { steerToward } from '../ai/steering';
+import type { TrackPath } from '../track/TrackPath';
+
+/**
+ * frozen: no movement (countdown). player: keyboard control. autopilot: steers along the
+ * track holding pedal (dev/tests). coast: no input, braking (after the finish).
+ */
+export type ControlMode = 'frozen' | 'player' | 'autopilot' | 'coast';
 
 export class RiderController {
   state: RiderState;
@@ -27,6 +35,8 @@ export class RiderController {
   readonly prev = { pos: { x: 0, y: 0, z: 0 } as Vec3, heading: 0, airPitch: 0, airYaw: 0 };
   /** Grab currently held in the air, if any. */
   grab: GrabName | null = null;
+  mode: ControlMode = 'player';
+  private autopilotHint: number | undefined;
 
   private readonly physics: PhysicsEngine;
   private readonly from = new Vector3();
@@ -41,12 +51,13 @@ export class RiderController {
   constructor(
     scene: Scene,
     private readonly terrainHeight: (x: number, z: number) => number,
+    private readonly path: TrackPath,
   ) {
     const engine = scene.getPhysicsEngine();
     if (!engine) throw new Error('RiderController needs physics enabled on the scene');
     this.physics = engine as PhysicsEngine;
-    const { startX, startZ } = config.rider;
-    this.state = createRiderState(startX, terrainHeight(startX, startZ), startZ, 0);
+    const start = path.sampleAt(0);
+    this.state = createRiderState(start.x, terrainHeight(start.x, start.z), start.z, start.heading);
     this.snapshot();
   }
 
@@ -56,9 +67,27 @@ export class RiderController {
   }
 
   fixedUpdate(input: Input, dt: number): StepEvents {
-    this.readInput(input);
     this.snapshot();
+    if (this.mode === 'frozen') return { tookOff: false, jumped: false, landed: null };
+    if (this.mode === 'player') this.readInput(input);
+    else this.autoInput();
     return stepRider(this.state, this.input, this.probe, riderPhysicsConfig, dt, this.slopeBelow);
+  }
+
+  /** Autopilot (steer along the track, pedal) or coasting (brake) after the finish. */
+  private autoInput(): void {
+    const i = this.input;
+    const s = this.state;
+    const ap = config.autopilot;
+    const st = steerToward(this.path, s.pos.x, s.pos.z, s.heading, ap.lookahead, ap.gain, 0, this.autopilotHint);
+    this.autopilotHint = st.index;
+    i.steer = st.steer;
+    i.pedal = this.mode === 'autopilot';
+    i.brake = this.mode === 'coast' && config.race.finishBrake;
+    i.jumpHeld = false;
+    i.pitch = 0;
+    i.spin = 0;
+    this.grab = null;
   }
 
   /** Puts the rider on the ground at (x, z), facing `heading`, rolling at `speed`. */
@@ -73,6 +102,7 @@ export class RiderController {
     s.speed = speed;
     this.state = s;
     this.grab = null;
+    this.autopilotHint = undefined;
     this.snapshot();
   }
 

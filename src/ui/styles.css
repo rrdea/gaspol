@@ -179,3 +179,163 @@ body {
   width: 0;
   background: #ffd23f;
 }
+
+#hud .timer {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 800 30px/1 ui-monospace, monospace;
+  text-align: center;
+}
+
+#hud .timer small {
+  display: block;
+  margin-top: 4px;
+  font: 700 14px/1 system-ui, sans-serif;
+  opacity: 0.9;
+}
+
+#hud .countdown {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.6);
+  font-size: 110px;
+  font-weight: 900;
+  font-style: italic;
+  color: #ffd23f;
+  opacity: 0;
+}
+
+#hud .countdown.visible {
+  animation: pop 0.9s ease-out forwards;
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
+#hud .split {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 16px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+#hud .split.visible {
+  opacity: 1;
+}
+
+#hud .split b {
+  color: #ffd23f;
+  margin-left: 6px;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#overlay .results {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 20, 10, 0.55);
+  pointer-events: auto;
+  color: #fff;
+}
+
+#overlay .results.visible {
+  display: flex;
+}
+
+#overlay .panel {
+  min-width: 320px;
+  padding: 24px 32px;
+  border-radius: 10px;
+  background: rgba(20, 30, 20, 0.92);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+#overlay h1 {
+  margin: 0;
+  font-size: 44px;
+  font-style: italic;
+  color: #ffd23f;
+}
+
+#overlay h2 {
+  margin: 4px 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+#overlay dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px 24px;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: 18px;
+}
+
+#overlay dt {
+  opacity: 0.75;
+}
+
+#overlay dd {
+  margin: 0;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+
+#overlay .badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #ff5a3c;
+  font: 800 11px/1.4 system-ui, sans-serif;
+}
+
+#overlay button {
+  padding: 10px 28px;
+  border: 0;
+  border-radius: 6px;
+  background: #ffd23f;
+  color: #222;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#overlay button small {
+  font-weight: 600;
+  opacity: 0.7;
+}

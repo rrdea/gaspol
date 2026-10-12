@@ -23,13 +23,18 @@ npm run build    # static build in dist/
 | Backflip / frontflip (air) | S/↓ / W/↑ |
 | Spin (air) | A/D or ←/→ |
 | Grab (air) | Shift + W (Superman), Shift + S (No-Hander), Shift + A/D (Can-Can) |
-| Respawn | R |
+| Respawn (at last checkpoint) | R |
+| Retry (results screen) | Enter |
 | Debug overlay | F3 |
 
 Tricks score on a clean landing: points × airtime bonus × combo multiplier. Chain clean
 tricks within 2 s of ground time to raise the multiplier; a sloppy landing or a crash ends it.
 
-Dev console (dev server only): `__gaspol.race.debugApproachRamp(2)` puts you just before ramp 2.
+Race: 3-2-1-GAS POL! countdown, then ride through every checkpoint gate in order to the finish.
+Your best time and trick score per track are saved in `localStorage` (`gaspol_save_v1`).
+
+Dev console (dev server only): `__gaspol.race.debugApproachRamp(2)` puts you just before ramp 2;
+`__gaspol.race.autopilot = true` (then Enter on the results, or reload) lets the autopilot ride.
 
 ## Status
 
@@ -40,7 +45,10 @@ Dev console (dev server only): `__gaspol.race.debugApproachRamp(2)` puts you jus
   crests, air flips/spins with a light landing assist, grabs, clean/sloppy/crash landings, trick
   detection + scoring + combos with HUD popups, crashes on bad landings and rock hits, tumble and
   respawn at the last safe point. Six kicker ramps and thin-instanced rocks on the hill.
-- [ ] M3 — A real track
+- [x] **M3 — A real track**: Bukit Hijau built from a spline (terrain ribbon in culled chunks, banks,
+  bumps), thin-instanced trees and rocks with collisions, ramps, ordered checkpoint gates, finish
+  line, race timer and splits, out-of-bounds respawn at the last checkpoint, countdown, results
+  screen and saved best time. A full autopilot run takes about 82 s.
 - [ ] M4 — Game feel pass
 - [ ] M5 — Rivals
 - [ ] M6 — Progression and content

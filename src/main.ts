@@ -5,9 +5,10 @@ import { Game } from './core/Game';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hud = document.getElementById('hud') as HTMLElement;
+const overlay = document.getElementById('overlay') as HTMLElement;
 const loading = document.getElementById('loading') as HTMLElement;
 
-const game = new Game(canvas, hud);
+const game = new Game(canvas, hud, overlay);
 
 // Dev-only console/test hook, e.g. __gaspol.race.debugPlace(150). Stripped from production builds.
 if (import.meta.env.DEV) (window as unknown as { __gaspol: Game }).__gaspol = game;

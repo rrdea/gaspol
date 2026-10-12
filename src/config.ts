@@ -66,9 +66,6 @@ export const config = {
     leanMax: 35 * DEG,
     leanRate: 8,
 
-    /** Start position. */
-    startX: 0,
-    startZ: 5,
   },
 
   jump: {
@@ -138,19 +135,10 @@ export const config = {
     crashImpactSpeed: 8,
     /** Speed kept after a soft bump into an obstacle. */
     bumpSpeedKeep: 0.3,
-    /** Save a respawn point this often while riding cleanly on the trail. */
-    safePointInterval: 1.0,
     /** Speed given on respawn. */
     respawnSpeed: 8,
-    /** No safe points from this far before a ramp to its lip (don't respawn into a kicker). */
-    rampClearance: 30,
-    /** Only record safe points this fast, on bare terrain (within this height of it). */
-    safeMinSpeed: 3,
-    safeTerrainTolerance: 0.3,
-    /** Falling this far below the slope profile counts as out of bounds. */
+    /** Falling this far below the track centre line counts as out of bounds. */
     killDepth: 40,
-    /** Riding within this distance of the bottom of the hill respawns you. */
-    endMargin: 20,
   },
 
   visual: {
@@ -171,30 +159,56 @@ export const config = {
     rockDetail: 1,
   },
 
-  terrain: {
-    /** Downhill runs along +Z. */
-    length: 1300,
-    /** Flat-ish run-up before the start line. */
-    startPad: 30,
-    width: 180,
-    /** Grid resolution (vertices per metre along each axis). */
-    cellSize: 1.5,
-    /** Base slope (rise/run) and how much it varies along the hill. */
-    baseSlope: 0.27,
-    slopeVariation: 0.1,
-    slopeVariationPeriod: 70,
+  track: {
+    /** Spline resample spacing along the track (m). */
+    sampleStep: 2,
+    /** Terrain extends this far either side of the centre line; banks rise into mountain sides. */
+    halfWidth: 85,
     /** Rideable trail half width; outside it the terrain rises into banks. */
-    trailHalfWidth: 14,
-    bankSteepness: 0.035,
-    /** Small lateral wander of the trail centre. */
-    wanderAmp: 10,
-    wanderPeriod: 220,
-    /** Two octaves of value-noise bumps. */
+    trailHalfWidth: 16,
+    /** Bank height = (distance outside the trail)^2 × bankSteepness. */
+    bankSteepness: 0.022,
+    /** Terrain mesh: row spacing along the track, column spacing on the trail, growth outward. */
+    rowStep: 1.5,
+    trailColumnStep: 1.25,
+    columnGrowth: 1.22,
+    maxColumnStep: 7,
+    /** Terrain is split into chunks this long for frustum culling. */
+    chunkLength: 120,
+    /** Two octaves of value-noise bumps (in track coordinates). */
     bumpAmp: 0.9,
     bumpFreq: 1 / 22,
     detailAmp: 0.18,
     detailFreq: 1 / 5,
+    /** Bumps fade in over this distance after the start so the start area is smooth. */
+    bumpFadeIn: 40,
     seed: 1337,
+    /** Further than this from the centre line counts as out of bounds. */
+    oobLateral: 60,
+    /** Checkpoint gates count if you pass within this distance of the centre line. */
+    gateHalfWidth: 22,
+    /** The start arch stands this far ahead of the start line (clear of the camera). */
+    startGateAhead: 20,
+    /** Run-out after the finish line before the terrain ends. */
+    finishRunout: 70,
+  },
+
+  race: {
+    countdownSeconds: 3,
+    /** Brake input applied automatically after the finish. */
+    finishBrake: true,
+    /** Split popup time on the HUD (s). */
+    splitPopupTime: 2.0,
+    /** How long the "GAS POL!" start text stays up (s). */
+    goTextTime: 1.2,
+    /** Delay between crossing the finish and showing the results (s). */
+    resultsDelay: 1.5,
+  },
+
+  autopilot: {
+    /** How far ahead on the spline the autopilot aims (m) and its steering gain. */
+    lookahead: 18,
+    gain: 2.5,
   },
 
   camera: {
@@ -231,7 +245,7 @@ export const config = {
 
 export type Config = typeof config;
 export type RiderConfig = Config['rider'];
-export type TerrainConfig = Config['terrain'];
+export type TrackConfig = Config['track'];
 
 /** The slice of config the pure rider step needs. */
 export const riderPhysicsConfig = {

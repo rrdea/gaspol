@@ -18,6 +18,7 @@ export class Game {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly hudRoot: HTMLElement,
+    private readonly overlayRoot: HTMLElement,
   ) {
     this.engine = new Engine(canvas, true, { stencil: true, preserveDrawingBuffer: false });
     window.addEventListener('resize', this.onResize);
@@ -25,8 +26,11 @@ export class Game {
 
   async start(): Promise<void> {
     const havok = await HavokPhysics();
-    this.race = new RaceScene(this.engine, havok, this.hudRoot);
+    this.race = new RaceScene(this.engine, havok, this.hudRoot, this.overlayRoot);
     await this.race.scene.whenReadyAsync();
+    // Start the countdown only once everything is loaded, so "3" isn't missed.
+    this.race.reset();
+    this.time.reset();
     this.canvas.focus();
 
     this.engine.runRenderLoop(() => {
