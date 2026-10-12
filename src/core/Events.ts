@@ -31,8 +31,15 @@ export class Emitter<Events extends object> {
   }
 }
 
+import type { LandingQuality } from '../rider/landing';
+
 /** Events raised during a race. Grows with later milestones. */
 export interface GameEvents {
-  respawned: { reason: 'manual' | 'outOfBounds' };
-  landed: { airTime: number };
+  jumped: Record<string, never>;
+  tookOff: Record<string, never>;
+  landed: { quality: LandingQuality; airTime: number };
+  trickLanded: { names: string[]; points: number; multiplier: number; comboTotal: number; quality: LandingQuality };
+  comboEnded: { total: number };
+  crashed: { cause: 'landing' | 'obstacle' };
+  respawned: { reason: 'manual' | 'outOfBounds' | 'crash' };
 }

@@ -1,5 +1,6 @@
-// The riding scene. M1: a test hill, the rider, chase camera, lights, sky/fog and the
-// debug HUD. Runs gameplay on fixed steps and renders with interpolation.
+// The riding scene: test hill with ramps and rocks, the rider with tricks and crashes,
+// chase camera, lights, sky/fog and the HUD. Runs gameplay on fixed steps and renders
+// with interpolation.
 
 import { Scene } from '@babylonjs/core/scene';
 import type { AbstractEngine } from '@babylonjs/core/Engines/abstractEngine';
@@ -14,8 +15,12 @@ import { config } from '../config';
 import { Emitter, type GameEvents } from '../core/Events';
 import type { Input } from '../core/Input';
 import { Terrain } from '../track/Terrain';
-import { slopeHeight } from '../track/terrainShape';
+import { Props } from '../track/Props';
+import { ramps } from '../track/m2Layout';
+import { trailCenterX } from '../track/terrainShape';
 import { RiderController } from '../rider/RiderController';
+import { TrickSystem } from '../rider/TrickSystem';
+import { CrashSystem } from '../rider/CrashSystem';
 import { RiderVisual } from '../rider/RiderVisual';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/Hud';
@@ -24,7 +29,10 @@ export class RaceScene {
   readonly scene: Scene;
   readonly events = new Emitter<GameEvents>();
   private readonly terrain: Terrain;
-  private readonly rider: RiderController;
+  private readonly props: Props;
+  readonly rider: RiderController;
+  private readonly tricks: TrickSystem;
+  private readonly crashes: CrashSystem;
   private readonly visual: RiderVisual;
   private readonly chase: ChaseCamera;
   private readonly hud: Hud;
@@ -53,28 +61,58 @@ export class RaceScene {
     sun.intensity = 0.7;
 
     this.terrain = new Terrain(scene, config.terrain);
-    const terrainCfg = config.terrain;
-    this.rider = new RiderController(
-      scene,
-      (x, z) => this.terrain.height(x, z),
-      (z) => slopeHeight(z, terrainCfg) - 40,
-      this.events,
-    );
+    this.props = new Props(scene, config.terrain);
+    const height = (x: number, z: number) => this.terrain.height(x, z);
+    this.rider = new RiderController(scene, height);
+    this.tricks = new TrickSystem(this.events);
+    const rampZones = ramps.map((r) => ({ from: r.z - config.crash.rampClearance, to: r.z + r.length }));
+    this.crashes = new CrashSystem(this.events, this.props.obstacles, height, rampZones);
     this.visual = new RiderVisual(scene);
-    this.chase = new ChaseCamera(scene, (x, z) => this.terrain.height(x, z));
+    this.chase = new ChaseCamera(scene, height);
     this.hud = new Hud(hudRoot);
 
     this.visual.update(this.rider, 1, 1);
     this.chase.snap(this.rider, this.visual.root);
-    this.events.on('respawned', () => {
-      this.visual.update(this.rider, 1, 1);
-      this.chase.snap(this.rider, this.visual.root);
-    });
+    this.listen();
   }
 
   fixedUpdate(input: Input, dt: number): void {
     if (input.wasPressed('debug')) this.hud.toggleDebug();
-    this.rider.fixedUpdate(input, dt);
+    const ev = this.rider.fixedUpdate(input, dt);
+    if (ev.jumped) this.events.emit('jumped', {});
+    if (ev.tookOff) this.events.emit('tookOff', {});
+    this.tricks.fixedUpdate(this.rider, ev, dt);
+    this.crashes.fixedUpdate(this.rider, input, ev, dt);
+  }
+
+  /** Dev helper: put the rider `lead` m before ramp `index`, aimed at it, rolling at `speed` m/s. */
+  debugApproachRamp(index: number, speed = 18, lead = 30): void {
+    const ramp = ramps[index];
+    const tx = trailCenterX(ramp.z, config.terrain) + ramp.offset;
+    const z = ramp.z - lead;
+    const x = trailCenterX(z, config.terrain) + ramp.offset;
+    this.rider.placeAt(x, z, Math.atan2(tx - x, lead), speed);
+    this.events.emit('respawned', { reason: 'manual' });
+  }
+
+  private listen(): void {
+    const { events, hud } = this;
+    events.on('respawned', () => {
+      this.visual.reset();
+      this.visual.update(this.rider, 1, 1);
+      this.chase.snap(this.rider, this.visual.root);
+    });
+    events.on('crashed', () => {
+      this.tricks.onCrash();
+      hud.showMessage('WIPEOUT!', 'crash');
+    });
+    events.on('landed', ({ quality }) => {
+      if (quality === 'sloppy') hud.showMessage('SLOPPY', 'sloppy');
+    });
+    events.on('trickLanded', (t) => hud.showTrick(t.names, t.points, t.multiplier, t.quality === 'sloppy'));
+    events.on('comboEnded', ({ total }) => {
+      if (total > 0) hud.showMessage(`COMBO ${total.toLocaleString()}`, 'info');
+    });
   }
 
   render(alpha: number, frameDt: number): void {
@@ -83,9 +121,15 @@ export class RaceScene {
     const s = this.rider.state;
     this.hud.update(
       {
+        speedKmh: this.rider.speedKmh,
+        score: this.tricks.score,
+        multiplier: this.tricks.multiplier,
+        charge: s.jumpCharge / config.jump.maxChargeTime,
+      },
+      {
         fps: this.engine.getFps(),
         speedKmh: this.rider.speedKmh,
-        grounded: s.grounded,
+        phase: s.phase,
         airTime: s.airTime,
         headingDeg: (s.heading * 180) / Math.PI,
         x: s.pos.x,
@@ -102,6 +146,7 @@ export class RaceScene {
     this.hud.dispose();
     this.chase.dispose();
     this.visual.dispose();
+    this.props.dispose();
     this.terrain.dispose();
     this.scene.dispose();
   }

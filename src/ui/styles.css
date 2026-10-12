@@ -76,3 +76,106 @@ body {
 #loading.hidden {
   display: none;
 }
+
+#hud .score {
+  position: absolute;
+  top: 12px;
+  right: 24px;
+  font-size: 28px;
+  font-weight: 800;
+  font-style: italic;
+}
+
+#hud .score small {
+  font-size: 14px;
+  opacity: 0.85;
+  margin-right: 4px;
+}
+
+#hud .score .mult,
+#hud .popup em {
+  color: #ffd23f;
+  font-style: italic;
+}
+
+#hud .popup {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translate(-50%, -10px) scale(0.9);
+  text-align: center;
+  font-weight: 800;
+  font-style: italic;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+
+#hud .popup.visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+#hud .popup .names {
+  font-size: 34px;
+  letter-spacing: 0.5px;
+}
+
+#hud .popup .points {
+  font-size: 26px;
+  color: #b8f36a;
+}
+
+#hud .popup .points.sloppy {
+  color: #f3c86a;
+}
+
+#hud .message {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 56px;
+  font-weight: 900;
+  font-style: italic;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+#hud .message.visible {
+  opacity: 1;
+}
+
+#hud .message.crash {
+  color: #ff5a3c;
+}
+
+#hud .message.sloppy {
+  color: #f3c86a;
+  font-size: 36px;
+}
+
+#hud .charge {
+  position: absolute;
+  bottom: 70px;
+  left: 50%;
+  width: 180px;
+  height: 10px;
+  margin-left: -90px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+#hud .charge.visible {
+  opacity: 1;
+}
+
+#hud .charge div {
+  height: 100%;
+  width: 0;
+  background: #ffd23f;
+}

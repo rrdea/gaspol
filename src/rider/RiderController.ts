@@ -1,45 +1,53 @@
-// Arcade rider controller. Casts two rays (front and rear wheel) down onto the Havok
-// colliders to find ground height and normal, then advances the pure riderPhysics step.
+// Arcade rider controller. Maps input actions to rider input (ground controls, air
+// flips/spins, grabs), casts two rays (front and rear wheel) down onto GROUND-filtered
+// Havok colliders for height and normal, and advances the pure riderPhysics step.
 // Keeps the previous step's state so the visual can interpolate between fixed steps.
 
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { PhysicsRaycastResult } from '@babylonjs/core/Physics/physicsRaycastResult';
+import type { IRaycastQuery } from '@babylonjs/core/Physics/physicsRaycastResult';
 import type { PhysicsEngine } from '@babylonjs/core/Physics/v2/physicsEngine';
 import type { Scene } from '@babylonjs/core/scene';
-import { config } from '../config';
+import { config, riderPhysicsConfig } from '../config';
 import type { Input } from '../core/Input';
-import type { Emitter, GameEvents } from '../core/Events';
 import {
   createRiderState,
   stepRider,
   type GroundSample,
   type RiderInput,
   type RiderState,
+  type StepEvents,
   type Vec3,
 } from './riderPhysics';
+import type { GrabName } from './tricks';
 
 export class RiderController {
   state: RiderState;
-  /** Snapshot of position/heading from the previous fixed step, for render interpolation. */
-  readonly prevPos: Vec3 = { x: 0, y: 0, z: 0 };
-  prevHeading = 0;
+  /** Snapshot of the previous fixed step, for render interpolation. */
+  readonly prev = { pos: { x: 0, y: 0, z: 0 } as Vec3, heading: 0, airPitch: 0, airYaw: 0 };
+  /** Grab currently held in the air, if any. */
+  grab: GrabName | null = null;
 
   private readonly physics: PhysicsEngine;
   private readonly from = new Vector3();
   private readonly to = new Vector3();
   private readonly hit = new PhysicsRaycastResult();
-  private readonly input: RiderInput = { steer: 0, pedal: false, brake: false };
+  private readonly query: IRaycastQuery = {
+    membership: config.physics.filterQuery,
+    collideWith: config.physics.filterGround,
+  };
+  private readonly input: RiderInput = { steer: 0, pedal: false, brake: false, jumpHeld: false, pitch: 0, spin: 0 };
 
   constructor(
     scene: Scene,
-    private readonly spawnHeight: (x: number, z: number) => number,
-    private readonly killHeight: (z: number) => number,
-    private readonly events: Emitter<GameEvents>,
+    private readonly terrainHeight: (x: number, z: number) => number,
   ) {
     const engine = scene.getPhysicsEngine();
     if (!engine) throw new Error('RiderController needs physics enabled on the scene');
     this.physics = engine as PhysicsEngine;
-    this.state = this.spawn();
+    const { startX, startZ } = config.rider;
+    this.state = createRiderState(startX, terrainHeight(startX, startZ), startZ, 0);
+    this.snapshot();
   }
 
   get speedKmh(): number {
@@ -47,42 +55,62 @@ export class RiderController {
     return Math.hypot(v.x, v.y, v.z) * 3.6;
   }
 
-  fixedUpdate(input: Input, dt: number): void {
-    if (input.wasPressed('respawn')) this.respawn('manual');
+  fixedUpdate(input: Input, dt: number): StepEvents {
+    this.readInput(input);
+    this.snapshot();
+    return stepRider(this.state, this.input, this.probe, riderPhysicsConfig, dt, this.slopeBelow);
+  }
 
-    this.input.steer = input.steerAxis();
-    this.input.pedal = input.isDown('pedal');
-    this.input.brake = input.isDown('brake');
+  /** Puts the rider on the ground at (x, z), facing `heading`, rolling at `speed`. */
+  placeAt(x: number, z: number, heading: number, speed: number): void {
+    // Start above the terrain and let the ground ray find the real surface (ramps included).
+    const s = createRiderState(x, this.terrainHeight(x, z), z, heading);
+    const ground = this.probe(x, z, heading, s.pos.y + 1);
+    if (ground) {
+      s.pos.y = ground.height;
+      s.groundNormal = ground.normal;
+    }
+    s.speed = speed;
+    this.state = s;
+    this.grab = null;
+    this.snapshot();
+  }
 
+  private snapshot(): void {
     const s = this.state;
-    this.prevPos.x = s.pos.x;
-    this.prevPos.y = s.pos.y;
-    this.prevPos.z = s.pos.z;
-    this.prevHeading = s.heading;
-
-    const wasGrounded = s.grounded;
-    const airTime = s.airTime;
-    stepRider(s, this.input, this.probe, config.rider, config.physics.gravity, dt);
-    if (!wasGrounded && s.grounded) this.events.emit('landed', { airTime });
-
-    const fellOff = s.pos.y < this.killHeight(s.pos.z);
-    const pastEnd = s.pos.z > config.terrain.length - 20;
-    if (fellOff || pastEnd) this.respawn('outOfBounds');
+    this.prev.pos.x = s.pos.x;
+    this.prev.pos.y = s.pos.y;
+    this.prev.pos.z = s.pos.z;
+    this.prev.heading = s.heading;
+    this.prev.airPitch = s.airPitch;
+    this.prev.airYaw = s.airYaw;
   }
 
-  respawn(reason: GameEvents['respawned']['reason']): void {
-    this.state = this.spawn();
-    this.events.emit('respawned', { reason });
-  }
+  private readInput(input: Input): void {
+    const i = this.input;
+    const up = input.isDown('pedal');
+    const down = input.isDown('brake');
+    const steer = input.steerAxis();
+    const airborne = this.state.phase === 'airborne';
 
-  private spawn(): RiderState {
-    const { startX, startZ } = config.rider;
-    const s = createRiderState(startX, this.spawnHeight(startX, startZ), startZ, 0);
-    this.prevPos.x = s.pos.x;
-    this.prevPos.y = s.pos.y;
-    this.prevPos.z = s.pos.z;
-    this.prevHeading = s.heading;
-    return s;
+    i.steer = steer;
+    i.jumpHeld = input.isDown('jump');
+    i.pedal = up;
+    i.brake = down;
+    i.pitch = 0;
+    i.spin = 0;
+    this.grab = null;
+    if (!airborne) return;
+
+    if (input.isDown('grab')) {
+      // Shift + direction picks a grab instead of rotating.
+      if (up) this.grab = 'Superman';
+      else if (down) this.grab = 'No-Hander';
+      else if (steer !== 0) this.grab = 'Can-Can';
+    } else {
+      i.pitch = (down ? 1 : 0) - (up ? 1 : 0); // S/↓ = backflip, W/↑ = frontflip
+      i.spin = steer;
+    }
   }
 
   /** Ground under (x, z): average of front and rear wheel raycasts. */
@@ -93,7 +121,10 @@ export class RiderController {
     const front = this.cast(x + fx, z + fz, y);
     const rear = this.cast(x - fx, z - fz, y);
     if (!front && !rear) return null;
-    if (!front || !rear) return (front ?? rear) as GroundSample;
+    if (!front || !rear) {
+      const only = (front ?? rear) as GroundSample;
+      return { ...only, frontHeight: front ? front.height : -Infinity };
+    }
     const n = {
       x: front.normal.x + rear.normal.x,
       y: front.normal.y + rear.normal.y,
@@ -101,16 +132,27 @@ export class RiderController {
     };
     const len = Math.hypot(n.x, n.y, n.z) || 1;
     return {
-      height: (front.height + rear.height) / 2,
+      // Highest wheel wins, so the bike rides up onto ramps instead of sinking in.
+      height: Math.max(front.height, rear.height),
       normal: { x: n.x / len, y: n.y / len, z: n.z / len },
+      frontHeight: front.height,
     };
+  };
+
+  /** Pitch of the bare terrain under the rider along its heading (for the air auto-level). */
+  private readonly slopeBelow = (x: number, z: number, heading: number): number => {
+    const d = config.rider.wheelOffset * 2;
+    const fx = Math.sin(heading) * d;
+    const fz = Math.cos(heading) * d;
+    const rise = this.terrainHeight(x + fx, z + fz) - this.terrainHeight(x - fx, z - fz);
+    return Math.atan2(rise, d * 2);
   };
 
   private cast(x: number, z: number, y: number): GroundSample | null {
     const { rayUp, rayDown } = config.rider;
     this.from.set(x, y + rayUp, z);
     this.to.set(x, y - rayDown, z);
-    this.physics.raycastToRef(this.from, this.to, this.hit);
+    this.physics.raycastToRef(this.from, this.to, this.hit, this.query);
     if (!this.hit.hasHit) return null;
     const p = this.hit.hitPointWorld;
     const n = this.hit.hitNormalWorld;

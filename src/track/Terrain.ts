@@ -9,7 +9,7 @@ import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { PhysicsAggregate } from '@babylonjs/core/Physics/v2/physicsAggregate';
 import { PhysicsShapeType } from '@babylonjs/core/Physics/v2/IPhysicsEnginePlugin';
 import type { Scene } from '@babylonjs/core/scene';
-import type { TerrainConfig } from '../config';
+import { config, type TerrainConfig } from '../config';
 import { valueNoise2 } from '../core/noise';
 import { heightAt, trailCenterX } from './terrainShape';
 
@@ -24,6 +24,7 @@ export class Terrain {
   constructor(scene: Scene, private readonly cfg: TerrainConfig) {
     this.mesh = this.buildMesh(scene);
     this.aggregate = new PhysicsAggregate(this.mesh, PhysicsShapeType.MESH, { mass: 0 }, scene);
+    this.aggregate.shape.filterMembershipMask = config.physics.filterGround;
   }
 
   height(x: number, z: number): number {

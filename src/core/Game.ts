@@ -12,7 +12,8 @@ export class Game {
   private readonly engine: Engine;
   private readonly input = new Input();
   private readonly time = new FixedStep(config.physics.fixedDt, config.physics.maxFrameDt);
-  private race: RaceScene | null = null;
+  /** The active race (exposed for the dev console hook). */
+  race: RaceScene | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,

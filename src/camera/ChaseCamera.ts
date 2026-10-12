@@ -8,16 +8,13 @@ import { PhysicsRaycastResult } from '@babylonjs/core/Physics/physicsRaycastResu
 import type { PhysicsEngine } from '@babylonjs/core/Physics/v2/physicsEngine';
 import type { Scene } from '@babylonjs/core/scene';
 import { config } from '../config';
+import { wrapAngle } from '../core/math';
 import type { RiderController } from '../rider/RiderController';
 import { groundForward } from '../rider/riderPhysics';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 
 function damp(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * dt);
-}
-
-function wrapAngle(a: number): number {
-  return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
 export class ChaseCamera {
@@ -62,12 +59,19 @@ export class ChaseCamera {
     const cfg = config.camera;
     const s = rider.state;
 
+    // Crashed: hold the camera where it is and just watch the tumble.
+    if (s.phase === 'crashed') {
+      this.lookAt.set(target.position.x, target.position.y + cfg.lookHeight, target.position.z);
+      this.camera.setTarget(this.lookAt);
+      return;
+    }
+
     // Grounded: follow the bike heading. Airborne: follow travel direction so flips/spins don't swing the view.
     const hSpeed = Math.hypot(s.vel.x, s.vel.z);
-    const targetYaw = !s.grounded && hSpeed > 1 ? Math.atan2(s.vel.x, s.vel.z) : s.heading;
+    const targetYaw = s.phase === 'airborne' && hSpeed > 1 ? Math.atan2(s.vel.x, s.vel.z) : s.heading;
     this.yaw += wrapAngle(targetYaw - this.yaw) * damp(cfg.yawDamping, dt);
     // Only follow the slope while grounded; in the air keep the last pitch for a stable view.
-    if (s.grounded) this.pitch += (this.travelPitch(rider) - this.pitch) * damp(cfg.pitchDamping, dt);
+    if (s.phase === 'grounded') this.pitch += (this.travelPitch(rider) - this.pitch) * damp(cfg.pitchDamping, dt);
 
     this.desiredOffset(this.desired);
     Vector3.LerpToRef(this.offset, this.desired, damp(cfg.positionDamping, dt), this.offset);
